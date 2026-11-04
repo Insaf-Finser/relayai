@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model SystemCheck {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+}
+
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+model Ticket {
+  id          String       @id @default(cuid())
+  subject     String
+  description String
+  status      TicketStatus @default(OPEN)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+
+enum UserRole {
+  CUSTOMER
+  AGENT
+  ADMIN
+}
+
+enum ConversationStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  passwordHash  String?
+  role          UserRole @default(CUSTOMER)
+  createdAt     DateTime @default(now())
+
+  customerConversations  Conversation[] @relation("ConversationCustomer")
+  assignedConversations  Conversation[] @relation("ConversationAssignee")
+  messages               Message[]
+  messageReads           MessageRead[]
+}
+
+
+model Conversation {
+  id              String             @id @default(cuid())
+  subject         String
+  status          ConversationStatus @default(OPEN)
+  customerId      String
+  assignedAgentId String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  customer        User      @relation("ConversationCustomer", fields: [customerId], references: [id], onDelete: Restrict)
+  assignedAgent   User?     @relation("ConversationAssignee", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  messages        Message[]
+
+  reopenRequestedAt      DateTime?
+  reopenRequestMessage   String?
+
+  @@index([customerId, createdAt])
+  @@index([assignedAgentId, status])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String
+  createdAt      DateTime @default(now())
+  reads          MessageRead[]
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Restrict)
+
+  @@index([conversationId, createdAt])
+}
+
+model MessageRead {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId, readAt])
+}
