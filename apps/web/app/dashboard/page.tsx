@@ -16,6 +16,19 @@ type Agent = {
   role: "AGENT";
 };
 
+type Ticket = {
+  id: string;
+  subject: string;
+  description: string;
+  status: string;
+  createdAt: string;
+  customer?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+};
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
@@ -35,33 +48,44 @@ function formatStatus(status: Conversation["status"]) {
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const { token, user, logout } = useAuth();
-  
-  const { unreadCounts, totalUnread } = useSocket();
+    const router = useRouter();
+    const { token, user, logout } = useAuth();
+    
+    const { unreadCounts, totalUnread } = useSocket();
 
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [queue, setQueue] = useState<Conversation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [queueLoading, setQueueLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [queueError, setQueueError] = useState("");
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [claimingId, setClaimingId] = useState<string | null>(null);
-  const [claimError, setClaimError] = useState("");
+    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [queue, setQueue] = useState<Conversation[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [queueLoading, setQueueLoading] = useState(false);
+    const [error, setError] = useState("");
+    const [queueError, setQueueError] = useState("");
+    const [refreshKey, setRefreshKey] = useState(0);
+    const [claimingId, setClaimingId] = useState<string | null>(null);
+    const [claimError, setClaimError] = useState("");
 
-  const [subject, setSubject] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState("");
-  const [createSuccess, setCreateSuccess] = useState("");
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [agentsLoading, setAgentsLoading] = useState(false);
-  const [agentsError, setAgentsError] = useState("");
-  const [assigningId, setAssigningId] = useState<string | null>(null);
-  const [assignmentErrors, setAssignmentErrors] = useState<
-    Record<string, string>
-  >({});
+    const [subject, setSubject] = useState("");
+    const [creating, setCreating] = useState(false);
+    const [createError, setCreateError] = useState("");
+    const [createSuccess, setCreateSuccess] = useState("");
+    const [agents, setAgents] = useState<Agent[]>([]);
+    const [agentsLoading, setAgentsLoading] = useState(false);
+    const [agentsError, setAgentsError] = useState("");
+    const [assigningId, setAssigningId] = useState<string | null>(null);
+    const [assignmentErrors, setAssignmentErrors] = useState<
+        Record<string, string>
+    >({});
   
+    const [ticketSubject, setTicketSubject] = useState("");
+    const [ticketDescription, setTicketDescription] = useState("");
+    const [creatingTicket, setCreatingTicket] = useState(false);
+    const [ticketError, setTicketError] = useState("");
+    const [ticketSuccess, setTicketSuccess] = useState("");
+    const [tickets, setTickets] = useState<Ticket[]>([]);
+    const [ticketsLoading, setTicketsLoading] = useState(false);
+    const [ticketsError, setTicketsError] = useState("");
+    const [agentTickets, setAgentTickets] = useState<Ticket[]>([]);
+    const [agentTicketsLoading, setAgentTicketsLoading] = useState(false);
+    const [agentTicketsError, setAgentTicketsError] = useState("");
 
   useEffect(() => {
     if (!token || !user) {
@@ -89,6 +113,57 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }, [token]);
+
+  const loadTickets = useCallback(async () => {
+    if (!token || user?.role !== "CUSTOMER") return;
+
+    setTicketsLoading(true);
+    setTicketsError("");
+
+    try {
+        const data = await api<Ticket[]>("/tickets", {
+        method: "GET",
+        token,
+        });
+
+        setTickets(data);
+    } catch (err) {
+        setTicketsError(
+        err instanceof Error ? err.message : "Could not load your tickets.",
+        );
+    } finally {
+        setTicketsLoading(false);
+    }
+    }, [token, user?.role]);
+
+    const loadAgentTickets = useCallback(async () => {
+        if (
+            !token ||
+            (user?.role !== "AGENT" && user?.role !== "ADMIN")
+        ) {
+            return;
+        }
+
+        setAgentTicketsLoading(true);
+        setAgentTicketsError("");
+
+        try {
+            const data = await api<Ticket[]>("/tickets", {
+            method: "GET",
+            token,
+            });
+
+            setAgentTickets(data);
+        } catch (err) {
+            setAgentTicketsError(
+            err instanceof Error
+                ? err.message
+                : "Could not load tickets.",
+            );
+        } finally {
+            setAgentTicketsLoading(false);
+        }
+    }, [token, user?.role]);
 
   const loadAgents = useCallback(async () => {
   if (!token || user?.role !== "ADMIN") return;
@@ -139,7 +214,6 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!token || !user) return;
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadConversations();
 
     if (user.role === "AGENT") {
@@ -149,7 +223,24 @@ export default function DashboardPage() {
     if (user.role === "ADMIN") {
         void loadAgents();
     }
-  }, [token, user, refreshKey, loadConversations, loadQueue]);
+
+    if (user.role === "CUSTOMER") {
+        void loadTickets();
+    }
+    
+    if (user.role === "AGENT" || user.role === "ADMIN") {
+        void loadAgentTickets();
+    }
+  }, [
+  token,
+  user,
+  refreshKey,
+  loadConversations,
+  loadQueue,
+  loadAgents,
+  loadTickets,
+  loadAgentTickets,
+]);
 
   async function handleCreateConversation(
     event: FormEvent<HTMLFormElement>,
@@ -192,6 +283,59 @@ export default function DashboardPage() {
       setCreating(false);
     }
   }
+
+    async function handleCreateTicket(
+        event: FormEvent<HTMLFormElement>,
+    ) {
+        event.preventDefault();
+
+        const cleanSubject = ticketSubject.trim();
+        const cleanDescription = ticketDescription.trim();
+
+        setTicketError("");
+        setTicketSuccess("");
+
+        if (cleanSubject.length < 3 || cleanSubject.length > 150) {
+            setTicketError("Subject must be between 3 and 150 characters.");
+            return;
+        }
+
+        if (cleanDescription.length < 5 || cleanDescription.length > 5000) {
+            setTicketError("Description must be between 5 and 5000 characters.");
+            return;
+        }
+
+        if (!token) {
+            setTicketError("Your session has expired. Please log in again.");
+            return;
+        }
+
+        setCreatingTicket(true);
+
+        try {
+            await api<Ticket>("/tickets", {
+            method: "POST",
+            token,
+            body: {
+                subject: cleanSubject,
+                description: cleanDescription,
+            },
+            });
+
+            setTicketSubject("");
+            setTicketDescription("");
+            setTicketSuccess("Your support request has been submitted successfully.");
+            setRefreshKey((value) => value + 1);
+        } catch (err) {
+            setTicketError(
+            err instanceof Error
+                ? err.message
+                : "Could not submit your support request.",
+            );
+        } finally {
+            setCreatingTicket(false);
+        }
+    }
 
   async function handleClaim(conversationId: string) {
     if (!token) return;
@@ -353,6 +497,172 @@ export default function DashboardPage() {
             </form>
           </section>
         )}
+        {isCustomer && (
+            <section className="mt-8 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+                <h2 className="text-lg font-semibold text-gray-900">
+                Submit a support request
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                Describe the issue you&apos;re experiencing. Our support team will review it.
+                </p>
+
+                <form onSubmit={handleCreateTicket} className="mt-5 space-y-4">
+                <div>
+                    <label
+                    htmlFor="ticket-subject"
+                    className="mb-1 block text-sm font-medium text-gray-700"
+                    >
+                    Subject
+                    </label>
+
+                    <input
+                    id="ticket-subject"
+                    name="subject"
+                    type="text"
+                    required
+                    minLength={3}
+                    maxLength={150}
+                    value={ticketSubject}
+                    onChange={(event) => setTicketSubject(event.target.value)}
+                    placeholder="Briefly describe your issue"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    />
+
+                    <p className="mt-1 text-xs text-gray-500">
+                    {ticketSubject.length}/150 characters
+                    </p>
+                </div>
+
+                <div>
+                    <label
+                    htmlFor="ticket-description"
+                    className="mb-1 block text-sm font-medium text-gray-700"
+                    >
+                    Description
+                    </label>
+
+                    <textarea
+                    id="ticket-description"
+                    name="description"
+                    required
+                    minLength={5}
+                    maxLength={5000}
+                    rows={5}
+                    value={ticketDescription}
+                    onChange={(event) => setTicketDescription(event.target.value)}
+                    placeholder="Explain what happened and what help you need..."
+                    className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    />
+
+                    <p className="mt-1 text-xs text-gray-500">
+                    {ticketDescription.length}/5000 characters
+                    </p>
+                </div>
+
+                {ticketError && (
+                    <p role="alert" className="text-sm text-red-700">
+                    {ticketError}
+                    </p>
+                )}
+
+                {ticketSuccess && (
+                    <p role="status" className="text-sm text-green-700">
+                    {ticketSuccess}
+                    </p>
+                )}
+
+                <button
+                    type="submit"
+                    disabled={
+                    creatingTicket ||
+                    !ticketSubject.trim() ||
+                    !ticketDescription.trim()
+                    }
+                    className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    {creatingTicket ? "Submitting..." : "Submit request"}
+                </button>
+                </form>
+            </section>
+        )}
+
+        {isCustomer && (
+            <section className="mt-8 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 className="text-lg font-semibold text-gray-900">
+                    My support tickets
+                    </h2>
+                    <p className="mt-1 text-sm text-gray-500">
+                    {tickets.length} ticket{tickets.length === 1 ? "" : "s"} submitted
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    onClick={() => void loadTickets()}
+                    disabled={ticketsLoading}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                    {ticketsLoading ? "Loading..." : "Refresh tickets"}
+                </button>
+                </div>
+
+                {ticketsLoading && (
+                <p className="py-8 text-center text-sm text-gray-500">
+                    Loading your tickets...
+                </p>
+                )}
+
+                {!ticketsLoading && ticketsError && (
+                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">
+                    <p className="text-sm text-red-700">{ticketsError}</p>
+                    <button
+                    type="button"
+                    onClick={() => void loadTickets()}
+                    className="mt-3 text-sm font-semibold text-red-700 underline"
+                    >
+                    Try again
+                    </button>
+                </div>
+                )}
+
+                {!ticketsLoading && !ticketsError && tickets.length === 0 && (
+                <p className="py-8 text-center text-sm text-gray-500">
+                    You haven&apos;t submitted any support tickets yet.
+                </p>
+                )}
+
+                {!ticketsLoading && !ticketsError && tickets.length > 0 && (
+                <ul className="divide-y divide-gray-100">
+                    {tickets.map((ticket) => (
+                    <li key={ticket.id} className="py-4 first:pt-0 last:pb-0">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                            <h3 className="wrap-break-word font-semibold text-gray-900">
+                            {ticket.subject}
+                            </h3>
+
+                            <p className="mt-2 whitespace-pre-wrap wrap-break-word text-sm text-gray-600">
+                            {ticket.description}
+                            </p>
+
+                            <p className="mt-2 text-xs text-gray-500">
+                            Submitted {formatDate(ticket.createdAt)}
+                            </p>
+                        </div>
+
+                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+                            {ticket.status.replaceAll("_", " ")}
+                        </span>
+                        </div>
+                    </li>
+                    ))}
+                </ul>
+                )}
+            </section>
+        )}
 
         {isAgent && (
           <section className="mt-8 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
@@ -437,6 +747,100 @@ export default function DashboardPage() {
               </ul>
             )}
           </section>
+        )}
+
+        {(isAgent || isAdmin) && (
+            <section className="mt-8 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 className="text-lg font-semibold text-gray-900">
+                    Support ticket queue
+                    </h2>
+                    <p className="mt-1 text-sm text-gray-500">
+                    {agentTickets.length} ticket
+                    {agentTickets.length === 1 ? "" : "s"} submitted by customers
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    onClick={() => void loadAgentTickets()}
+                    disabled={agentTicketsLoading}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                    {agentTicketsLoading ? "Loading..." : "Refresh tickets"}
+                </button>
+                </div>
+
+                {agentTicketsLoading && (
+                <p className="py-8 text-center text-sm text-gray-500">
+                    Loading support tickets...
+                </p>
+                )}
+
+                {!agentTicketsLoading && agentTicketsError && (
+                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">
+                    <p className="text-sm text-red-700">{agentTicketsError}</p>
+                    <button
+                    type="button"
+                    onClick={() => void loadAgentTickets()}
+                    className="mt-3 text-sm font-semibold text-red-700 underline"
+                    >
+                    Try again
+                    </button>
+                </div>
+                )}
+
+                {!agentTicketsLoading &&
+                !agentTicketsError &&
+                agentTickets.length === 0 && (
+                    <p className="py-8 text-center text-sm text-gray-500">
+                    No support tickets have been submitted yet.
+                    </p>
+                )}
+
+                {!agentTicketsLoading &&
+                !agentTicketsError &&
+                agentTickets.length > 0 && (
+                    <ul className="divide-y divide-gray-100">
+                    {agentTickets.map((ticket) => (
+                        <li key={ticket.id} className="py-5 first:pt-0 last:pb-0">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                            <h3 className="wrap-break-word font-semibold text-gray-900">
+                                {ticket.subject}
+                            </h3>
+
+                            <p className="mt-1 text-sm text-gray-500">
+                                Customer: {ticket.customer?.name ?? "Unknown customer"}
+                            </p>
+
+                            {ticket.customer?.email && (
+                                <p className="text-xs text-gray-500">
+                                {ticket.customer.email}
+                                </p>
+                            )}
+
+                            <p className="mt-3 whitespace-pre-wrap wrap-break-word text-sm text-gray-700">
+                                {ticket.description.length > 180
+                                ? `${ticket.description.slice(0, 180)}...`
+                                : ticket.description}
+                            </p>
+
+                            <p className="mt-2 text-xs text-gray-500">
+                                Submitted {formatDate(ticket.createdAt)}
+                            </p>
+                            </div>
+
+                            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+                            {ticket.status.replaceAll("_", " ")}
+                            </span>
+                        </div>
+                        </li>
+                    ))}
+                    </ul>
+                )}
+            </section>
         )}
 
         <section className="mt-8 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
