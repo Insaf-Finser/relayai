@@ -6,6 +6,7 @@ import {
 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateTicketDto } from './dto/create-ticket.dto.js';
+import { calculateTicketSimilarity } from './ticket-similarity.js';
 
 @Injectable()
 export class TicketsService {
@@ -31,28 +32,75 @@ export class TicketsService {
 
   // Customers see their own tickets.
   // Agents and admins see all tickets.
-  findAll(userId: string, role: string) {
+  async findAll(userId: string, role: string) {
     const where =
-      role === 'CUSTOMER'
+        role === 'CUSTOMER'
         ? { customerId: userId }
         : {};
 
-    return this.prisma.ticket.findMany({
+    const tickets = await this.prisma.ticket.findMany({
         where,
+        orderBy: {
+        createdAt: 'desc',
+        },
+        include: {
+        customer: {
+            select: {
+            id: true,
+            name: true,
+            email: true,
+            },
+        },
+        },
+    });
+
+    // Customers only receive their own tickets.
+    // Duplicate detection is reserved for staff.
+    if (role === 'CUSTOMER') {
+        return tickets;
+    }
+
+    const unresolvedTickets = await this.prisma.ticket.findMany({
+        where: {
+            status: {
+            in: ['OPEN', 'IN_PROGRESS'],
+            },
+        },
         orderBy: {
             createdAt: 'desc',
         },
-        include: {
-            customer: {
-            select: {
-                id: true,
-                name: true,
-                email: true,
-            },
-            },
-        },
-    });
-  }
+        });
+
+        return tickets.map((ticket) => {
+        const ticketText = `${ticket.subject} ${ticket.description}`;
+
+        const possibleDuplicates = unresolvedTickets
+            .filter((candidate) => candidate.id !== ticket.id)
+            .map((candidate) => {
+            const candidateText =
+                `${candidate.subject} ${candidate.description}`;
+
+            const similarity = calculateTicketSimilarity(
+                ticketText,
+                candidateText,
+            );
+
+            return {
+                id: candidate.id,
+                subject: candidate.subject,
+                status: candidate.status,
+                similarity,
+            };
+            })
+            .filter((candidate) => candidate.similarity >= 0.5)
+            .sort((a, b) => b.similarity - a.similarity);
+
+        return {
+            ...ticket,
+            possibleDuplicates,
+        };
+        });
+    }
 
   // Customers can only access their own tickets.
   // Agents and admins can access all tickets.

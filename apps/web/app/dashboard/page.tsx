@@ -27,6 +27,12 @@ type Ticket = {
     name: string;
     email: string;
   } | null;
+  possibleDuplicates?: {
+    id: string;
+    subject: string;
+    status: string;
+    similarity: number;
+    }[];
 };
 
 function formatDate(value: string) {
@@ -826,6 +832,27 @@ export default function DashboardPage() {
                                 ? `${ticket.description.slice(0, 180)}...`
                                 : ticket.description}
                             </p>
+
+                            {ticket.possibleDuplicates &&
+                            ticket.possibleDuplicates.length > 0 && (
+                                <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
+                                <p className="text-sm font-semibold text-amber-800">
+                                    Possible duplicate tickets
+                                </p>
+
+                                <div className="mt-2 space-y-2">
+                                    {ticket.possibleDuplicates.map((duplicate) => (
+                                    <div key={duplicate.id} className="text-sm text-amber-900">
+                                        <p className="font-medium">{duplicate.subject}</p>
+                                        <p className="text-xs">
+                                        Status: {duplicate.status} · Similarity:{" "}
+                                        {Math.round(duplicate.similarity * 100)}%
+                                        </p>
+                                    </div>
+                                    ))}
+                                </div>
+                                </div>
+                            )}
 
                             <p className="mt-2 text-xs text-gray-500">
                                 Submitted {formatDate(ticket.createdAt)}

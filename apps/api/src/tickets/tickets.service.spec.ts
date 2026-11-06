@@ -122,6 +122,100 @@ describe("TicketsService", () => {
     },
   );
 
+  it("returns tickets to staff with an empty duplicate list initially", async () => {
+    const existingTicket = {
+      id: "ticket-2",
+      subject: "Cannot login to account",
+      description: "Unable to access my account",
+      status: "OPEN",
+      customerId: "customer-2",
+      createdAt: new Date(),
+      customer: null,
+    };
+
+    prisma.ticket.findMany.mockResolvedValue([existingTicket]);
+
+    const result = await service.findAll("agent-1", "AGENT");
+
+    expect(result).toEqual([
+      {
+        ...existingTicket,
+        possibleDuplicates: [],
+      },
+    ]);
+  }); 
+
+  it("detects similar unresolved tickets for staff", async () => {
+    const ticketA = {
+      id: "ticket-1",
+      subject: "Cannot login to account",
+      description: "Unable to access my account",
+      status: "OPEN",
+      customerId: "customer-1",
+      createdAt: new Date(),
+      customer: null,
+    };
+
+    const ticketB = {
+      id: "ticket-2",
+      subject: "Cannot login to account",
+      description: "Unable to access my account",
+      status: "IN_PROGRESS",
+      customerId: "customer-2",
+      createdAt: new Date(),
+    };
+
+    // First call: tickets displayed in the staff queue.
+    // Second call: all unresolved tickets for comparison.
+    prisma.ticket.findMany
+      .mockResolvedValueOnce([ticketA])
+      .mockResolvedValueOnce([ticketA, ticketB]);
+
+    const result = await service.findAll("agent-1", "AGENT");
+
+    expect(result[0]).toMatchObject({
+      possibleDuplicates: [
+        {
+          id: "ticket-2",
+          subject: "Cannot login to account",
+          status: "IN_PROGRESS",
+          similarity: 1,
+        },
+      ],
+    });
+  });
+
+  it("does not suggest resolved tickets as duplicates", async () => {
+    const ticketA = {
+      id: "ticket-1",
+      subject: "Cannot login to account",
+      description: "Unable to access my account",
+      status: "OPEN",
+      customerId: "customer-1",
+      createdAt: new Date(),
+      customer: null,
+    };
+
+    const resolvedTicket = {
+      id: "ticket-2",
+      subject: "Cannot login to account",
+      description: "Unable to access my account",
+      status: "RESOLVED",
+      customerId: "customer-2",
+      createdAt: new Date(),
+    };
+
+    prisma.ticket.findMany
+      .mockResolvedValueOnce([ticketA])
+      .mockResolvedValueOnce([ticketA]);
+
+    const result = await service.findAll("agent-1", "AGENT");
+
+    expect(result[0]).toMatchObject({
+      possibleDuplicates: [],
+    });
+  });
+
   it("allows a customer to access their own ticket", async () => {
     const expected = {
       id: "ticket-1",
