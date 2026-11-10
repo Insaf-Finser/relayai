@@ -7,10 +7,14 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateTicketDto } from './dto/create-ticket.dto.js';
 import { calculateTicketSimilarity } from './ticket-similarity.js';
+import { AiService } from '../ai/ai.service.js';
 
 @Injectable()
 export class TicketsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly aiService: AiService,
+    ) {}
 
   // Only customers can create tickets.
   // Ownership always comes from the authenticated user.
@@ -126,4 +130,54 @@ export class TicketsService {
 
     return ticket;
   }
+
+    // Only agents and admins can generate AI ticket summaries.
+  async summarize(
+    id: string,
+    userId: string,
+    role: string,
+  ) {
+    if (role !== 'AGENT' && role !== 'ADMIN') {
+      throw new ForbiddenException(
+        'Only agents and admins can generate ticket summaries',
+      );
+    }
+
+    const ticket = await this.findOne(id, userId, role);
+
+    const summary = await this.aiService.summarizeTicket(
+      ticket.subject,
+      ticket.description,
+    );
+
+    return {
+      ticketId: ticket.id,
+      summary,
+    };
+  }
+
+  // Only agents and admins can generate AI-suggested replies.
+    async suggestReply(
+    id: string,
+    userId: string,
+    role: string,
+    ) {
+    if (role !== 'AGENT' && role !== 'ADMIN') {
+        throw new ForbiddenException(
+        'Only agents and admins can generate suggested replies',
+        );
+    }
+
+    const ticket = await this.findOne(id, userId, role);
+
+    const reply = await this.aiService.suggestReply(
+        ticket.subject,
+        ticket.description,
+    );
+
+    return {
+        ticketId: ticket.id,
+        reply,
+    };
+    }
 }

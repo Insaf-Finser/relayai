@@ -49,4 +49,28 @@ export class TicketsController {
       req.user.role,
     );
   }
+
+  @Post(':id/summary')
+  summarize(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.ticketsService.summarize(
+      id,
+      req.user.userId,
+      req.user.role,
+    );
+  }
+
+  @Post(':id/suggest-reply')
+  suggestReply(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    ) {
+    return this.ticketsService.suggestReply(
+        id,
+        req.user.userId,
+        req.user.role,
+    );
+    }
 }

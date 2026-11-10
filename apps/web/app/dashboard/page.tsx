@@ -92,6 +92,19 @@ export default function DashboardPage() {
     const [agentTickets, setAgentTickets] = useState<Ticket[]>([]);
     const [agentTicketsLoading, setAgentTicketsLoading] = useState(false);
     const [agentTicketsError, setAgentTicketsError] = useState("");
+    const [summarizingId, setSummarizingId] = useState<string | null>(null);
+
+    const [ticketSummaries, setTicketSummaries] = useState<
+    Record<string, string>
+    >({});
+
+    const [summaryErrors, setSummaryErrors] = useState<
+    Record<string, string>
+    >({});
+
+    const [generatingReplyId, setGeneratingReplyId] = useState<string | null>(null);
+    const [ticketReplyDrafts, setTicketReplyDrafts] = useState<Record<string, string>>({});
+    const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!token || !user) {
@@ -342,6 +355,80 @@ export default function DashboardPage() {
             setCreatingTicket(false);
         }
     }
+
+    async function handleGenerateSummary(ticketId: string) {
+  if (!token) return;
+
+  setSummarizingId(ticketId);
+
+  setSummaryErrors((current) => {
+    const next = { ...current };
+    delete next[ticketId];
+    return next;
+  });
+
+  try {
+    const result = await api<{
+      ticketId: string;
+      summary: string;
+    }>(`/tickets/${encodeURIComponent(ticketId)}/summary`, {
+      method: "POST",
+      token,
+    });
+
+    setTicketSummaries((current) => ({
+      ...current,
+      [ticketId]: result.summary,
+    }));
+  } catch (err) {
+    setSummaryErrors((current) => ({
+      ...current,
+      [ticketId]:
+        err instanceof Error
+          ? err.message
+          : "Could not generate ticket summary.",
+    }));
+  } finally {
+    setSummarizingId(null);
+  }
+}
+
+async function handleGenerateReply(ticketId: string) {
+  if (!token) return;
+
+  setGeneratingReplyId(ticketId);
+
+  setReplyErrors((current) => {
+    const next = { ...current };
+    delete next[ticketId];
+    return next;
+  });
+
+  try {
+    const result = await api<{
+      ticketId: string;
+      reply: string;
+    }>(`/tickets/${encodeURIComponent(ticketId)}/suggest-reply`, {
+      method: "POST",
+      token,
+    });
+
+    setTicketReplyDrafts((current) => ({
+      ...current,
+      [ticketId]: result.reply,
+    }));
+  } catch (err) {
+    setReplyErrors((current) => ({
+      ...current,
+      [ticketId]:
+        err instanceof Error
+          ? err.message
+          : "Could not generate suggested reply.",
+    }));
+  } finally {
+    setGeneratingReplyId(null);
+  }
+}
 
   async function handleClaim(conversationId: string) {
     if (!token) return;
@@ -654,6 +741,8 @@ export default function DashboardPage() {
                             {ticket.description}
                             </p>
 
+                            
+
                             <p className="mt-2 text-xs text-gray-500">
                             Submitted {formatDate(ticket.createdAt)}
                             </p>
@@ -853,6 +942,100 @@ export default function DashboardPage() {
                                 </div>
                                 </div>
                             )}
+
+                            <div className="mt-3">
+                                <button
+                                    type="button"
+                                    onClick={() => handleGenerateSummary(ticket.id)}
+                                    disabled={summarizingId === ticket.id}
+                                    className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {summarizingId === ticket.id
+                                    ? "Generating summary..."
+                                    : "Generate AI Summary"}
+                                </button>
+
+                                {ticketSummaries[ticket.id] && (
+                                    <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                                        AI-generated summary
+                                    </p>
+                                    <p className="mt-1 text-sm text-gray-800">
+                                        {ticketSummaries[ticket.id]}
+                                    </p>
+                                    </div>
+                                )}
+
+                                {summaryErrors[ticket.id] && (
+                                    <p className="mt-2 text-sm text-red-600">
+                                    {summaryErrors[ticket.id]}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="mt-4 rounded-lg border border-purple-200 bg-white p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <p className="text-sm font-semibold text-gray-900">
+                                    AI Suggested Reply
+                                    </p>
+
+                                    <button
+                                    type="button"
+                                    onClick={() => handleGenerateReply(ticket.id)}
+                                    disabled={generatingReplyId === ticket.id}
+                                    className="rounded-lg border border-purple-300 px-3 py-2 text-sm font-medium text-purple-700 transition hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                    {generatingReplyId === ticket.id
+                                        ? "Generating reply..."
+                                        : "Generate AI Reply"}
+                                    </button>
+                                </div>
+
+                                {ticketReplyDrafts[ticket.id] !== undefined && (
+                                    <div className="mt-3">
+                                    <label
+                                        htmlFor={`reply-draft-${ticket.id}`}
+                                        className="mb-2 block text-xs font-medium text-gray-600"
+                                    >
+                                        Review and edit before sending
+                                    </label>
+
+                                    <textarea
+                                        id={`reply-draft-${ticket.id}`}
+                                        value={ticketReplyDrafts[ticket.id]}
+                                        onChange={(event) =>
+                                        setTicketReplyDrafts((current) => ({
+                                            ...current,
+                                            [ticket.id]: event.target.value,
+                                        }))
+                                        }
+                                        rows={7}
+                                        className="w-full rounded-lg border border-gray-300 p-3 text-sm text-gray-800 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                                    />
+
+                                    <p className="mt-2 text-xs text-gray-500">
+                                        AI-generated draft. Review and edit before sending.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void navigator.clipboard.writeText(
+                                            ticketReplyDrafts[ticket.id],
+                                            );
+                                        }}
+                                        className="mt-3 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+                                        >
+                                        Copy Reply
+                                    </button>
+                                    </div>
+                                )}
+
+                                {replyErrors[ticket.id] && (
+                                    <p className="mt-2 text-sm text-red-600">
+                                    {replyErrors[ticket.id]}
+                                    </p>
+                                )}
+                            </div>
 
                             <p className="mt-2 text-xs text-gray-500">
                                 Submitted {formatDate(ticket.createdAt)}
